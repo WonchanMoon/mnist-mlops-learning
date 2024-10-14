@@ -11,7 +11,7 @@ def load_mnist_data(root='data', flatten=True, batch_size=32):
              torchvision.transforms.Lambda(lambda x: torch.flatten(x))]
         )
     else:
-        transform = torchvision.transforms.ToTensor(),
+        transform = torchvision.transforms.ToTensor()
 
     train_dataset = MNIST(root=root, download=True, transform=transform)
     test_dataset = MNIST(root=root, train=False,

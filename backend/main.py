@@ -4,22 +4,25 @@ from fastapi import BackgroundTasks
 from urllib.parse import urlparse
 
 import mlflow
-from mlflow.tracking import MlflowClient
+# from mlflow.tracking import MlflowClient
+from mlflow.client import MlflowClient
 from ml.train import Trainer
-from ml.models import LinearModel
+from ml.models import LinearModel, CNNModel
 from ml.data import load_mnist_data
 from ml.utils import set_device
 from backend.models import DeleteApiData, TrainApiData, PredictApiData
 
 
 #mlflow.set_tracking_uri('sqlite:///backend.db')
-mlflow.set_tracking_uri("sqlite:///db/backend.db")
+# mlflow.set_tracking_uri("sqlite:///db/backend.db")
+mlflow.set_tracking_uri("http://127.0.0.1:8080")
+
 app = FastAPI()
 mlflowclient = MlflowClient(
     mlflow.get_tracking_uri(), mlflow.get_registry_uri())
 
 
-def train_model_task(model_name: str, hyperparams: dict, epochs: int):
+def train_model_task(model_name: str, hyperparams: dict, epochs: int, model_type: str):
     """Tasks that trains the model. This is supposed to be running in the background
     Since it's a heavy computation it's better to use a stronger task runner like Celery
     For the simplicity I kept it as a fastapi background task"""
@@ -32,13 +35,19 @@ def train_model_task(model_name: str, hyperparams: dict, epochs: int):
         # Log hyperparameters
         mlflow.log_params(hyperparams)
 
-        # Prepare for training
-        print("Loading data...")
-        train_dataloader, test_dataloader = load_mnist_data()
-
         # Train
-        print("Training model")
-        model = LinearModel(hyperparams).to(device)
+        if model_type == "Linear":
+            # Prepare for training
+            print("Loading data...")
+            train_dataloader, test_dataloader = load_mnist_data()
+            print("Training model")
+            model = LinearModel(hyperparams).to(device)
+        elif model_type == "Conv":
+            # Prepare for training
+            print("Loading data...")
+            train_dataloader, test_dataloader = load_mnist_data(flatten=False)
+            print("Training model")
+            model = CNNModel(hyperparams).to(device)
         trainer = Trainer(model, device=device)  # Default configs
         history = trainer.train(epochs, train_dataloader, test_dataloader)
 
@@ -55,15 +64,18 @@ def train_model_task(model_name: str, hyperparams: dict, epochs: int):
         # Model registry does not work with file store
         if tracking_url_type_store != "file":
             mlflow.pytorch.log_model(
-                model, "LinearModel", registered_model_name=model_name, conda_env=mlflow.pytorch.get_default_conda_env())
+                model, f"{model_type}Model", registered_model_name=model_name, conda_env=mlflow.pytorch.get_default_conda_env())
         else:
             mlflow.pytorch.log_model(
-                model, "LinearModel-MNIST", registered_model_name=model_name)
+                model, f"{model_type}Model-MNIST", registered_model_name=model_name)
         # Transition to production. We search for the last model with the name and we stage it to production
         mv = mlflowclient.search_model_versions(
             f"name='{model_name}'")[-1]  # Take last model version
         mlflowclient.transition_model_version_stage(
             name=mv.name, version=mv.version, stage="production")
+        # mlflowclient.update_model_version(
+        #     name=mv.name, version=mv.version, stage="production"
+        # )
 
 
 @app.get("/")
@@ -75,7 +87,8 @@ async def read_root():
 @app.get("/models")
 async def get_models_api():
     """Gets a list with model names"""
-    model_list = mlflowclient.list_registered_models()
+    # model_list = mlflowclient.list_registered_models()
+    model_list = mlflowclient.search_registered_models()
     model_list = [model.name for model in model_list]
     return model_list
 
@@ -86,9 +99,10 @@ async def train_api(data: TrainApiData, background_tasks: BackgroundTasks):
     hyperparams = data.hyperparams
     epochs = data.epochs
     model_name = data.model_name
+    model_type = data.model_type
 
     background_tasks.add_task(
-        train_model_task, model_name, hyperparams, epochs)
+        train_model_task, model_name, hyperparams, epochs, model_type)
 
     return {"result": "Training task started"}
 
@@ -115,8 +129,12 @@ async def predict_api(data: PredictApiData):
 @app.post("/delete")
 async def delete_model_api(data: DeleteApiData):
     model_name = data.model_name
-    version = data.model_version
-    
+    # version = data.model_version
+    version = None
+
+    if model_name is None:
+        return {"result": "model_name is none"}
+
     if version is None:
         # Delete all versions
         mlflowclient.delete_registered_model(name=model_name)

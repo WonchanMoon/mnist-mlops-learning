@@ -23,7 +23,7 @@ DELETE_URL = urllib.parse.urljoin(BACKEND_URL, "delete")
 
 st.title("Mnist training and prediction")
 st.sidebar.subheader("Page navigtion")
-page = st.sidebar.selectbox(label="", options=[
+page = st.sidebar.selectbox(label="Select mode", options=[
     "Train", "Predict", "Delete"])
 st.sidebar.write("https://github.com/zademn")
 
@@ -32,9 +32,9 @@ if page == "Train":
     st.session_state.model_type = st.selectbox(
         "Model type", options=["Linear", "Conv"])
 
-    model_name = st.text_input(label="Model name", value="My Model")
-
     if st.session_state.model_type == "Linear":
+        model_name = st.text_input(label="Model name", value="Linear")
+
         num_layers = st.select_slider(
             label="Number of hidden layers", options=[1, 2, 3])
         cols = st.columns(num_layers)
@@ -49,12 +49,39 @@ if page == "Train":
             "output_dim": 10,
         }
 
-        epochs = st.number_input("Epochs", min_value=1, value=5, max_value=128)
+    if st.session_state.model_type == "Conv":
+        model_name = st.text_input(label="Model name", value="Conv")
+
+        num_layers = st.select_slider(
+            label="Number of Conv layers", options=[2, 3, 4])
+        
+        num_filters = st.select_slider(
+            label="Size of filters", options=[[16, 32], [32, 64], [64, 128]])
+
+        kernel_size = st.select_slider(
+            label="Size of kernel", options=[3, 5, 7])
+
+        stride = st.select_slider(
+            label="Number of stride", options=[1, 2, 3])
+
+        dropout_rate = st.select_slider(
+            label="Rate of dropout", options=[0, 0.3, 0.5])
+
+        hyperparams = {
+            "num_layers": num_layers,
+            "num_filters": num_filters,
+            "kernel_size": kernel_size,
+            "stride": stride,
+            "dropout_rate": dropout_rate,
+        }
+
+    epochs = st.number_input("Epochs", min_value=1, value=5, max_value=128)
 
     if st.button("Train"):
         st.write(f"{hyperparams=}")
         to_post = {"model_name": model_name,
-                   "hyperparams": hyperparams, "epochs": epochs}
+                   "hyperparams": hyperparams, "epochs": epochs,
+                   "model_type": st.session_state.model_type}
         response = requests.post(url=TRAIN_URL, data=json.dumps(to_post))
         if response.ok:
             res = response.json()["result"]
