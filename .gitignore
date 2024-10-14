@@ -149,3 +149,5 @@ data/
 *.ipynb
 *.db
 mlruns/
+
+.DS_Store
