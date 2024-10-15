@@ -17,6 +17,7 @@ else:
 
 MODELS_URL = urllib.parse.urljoin(BACKEND_URL, "models")
 TRAIN_URL = urllib.parse.urljoin(BACKEND_URL, "train")
+EVALUATE_URL = urllib.parse.urljoin(BACKEND_URL, "evaluate")
 PREDICT_URL = urllib.parse.urljoin(BACKEND_URL, "predict")
 DELETE_URL = urllib.parse.urljoin(BACKEND_URL, "delete")
 
@@ -24,7 +25,7 @@ DELETE_URL = urllib.parse.urljoin(BACKEND_URL, "delete")
 st.title("Mnist training and prediction")
 st.sidebar.subheader("Page navigtion")
 page = st.sidebar.selectbox(label="Select mode", options=[
-    "Train", "Predict", "Delete"])
+    "Train", "Evaluate", "Predict", "Delete"])
 st.sidebar.write("https://github.com/zademn")
 
 if page == "Train":
@@ -89,8 +90,41 @@ if page == "Train":
             res = "Training task failed"
         st.write(res)
 
-    # if st.session_state.model_type == "Conv":
-    #     pass
+elif page == "Evaluate":
+    try:
+        response = requests.get(MODELS_URL)
+        if response.ok:
+            model_list = response.json()
+            model_name = st.selectbox(
+                label="Select your model", options=model_list)
+        else:
+            st.write("No models found")
+    except ConnectionError as e:
+        st.write("Couldn't reach backend")
+    
+    try:
+        response_predict = requests.post(url=EVALUATE_URL,
+                                            data=json.dumps({"model_name": model_name}))
+        if response_predict.ok:
+            res = response_predict.json()
+            metrics = res['result']
+            # 제목 출력
+            st.markdown("### **Evaluation Metrics**:")
+
+            # 먼저 train 관련 항목 출력
+            train_metrics = {k: v for k, v in metrics.items() if 'train' in k}
+            for metric_name, metric_value in train_metrics.items():
+                st.write(f"**{metric_name.replace('_', ' ').capitalize()}**: {metric_value:.4f}")
+
+            # 그다음 나머지 val 관련 항목 출력
+            val_metrics = {k: v for k, v in metrics.items() if 'val' in k}
+            for metric_name, metric_value in val_metrics.items():
+                st.write(f"**{metric_name.replace('_', ' ').capitalize()}**: {metric_value:.4f}")
+        else:
+            st.write("Some error occured")
+    except ConnectionError as e:
+        st.write("Couldn't reach backend")
+
 
 elif page == "Predict":
 
@@ -137,6 +171,26 @@ elif page == "Predict":
             if response_predict.ok:
                 res = response_predict.json()
                 st.markdown(f"**Prediction**: {res['result']}")
+                # 클래스 레이블
+                class_labels = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+                # 확률과 클래스 레이블을 묶어 리스트 생성
+                softmax_output = res['prob']
+                class_probabilities = [(class_labels[i], softmax_output[0][i]) for i in range(len(class_labels))]
+
+                # 확률이 큰 순서대로 정렬
+                sorted_probabilities = sorted(class_probabilities, key=lambda x: x[1], reverse=True)
+
+                # 테이블 형식으로 변환
+                table_data = [["Class", "Probability"]]  # 열 이름 추가
+                for class_label, probability in sorted_probabilities:
+                    table_data.append([class_label, f"{probability * 100:.4f}%"])  # 확률을 %로 포맷팅하여 추가
+
+                # 제목 출력
+                st.markdown("### **Softmax Output Probabilities (Sorted)**")
+
+                # 클래스별 확률을 테이블 형식으로 출력
+                st.table(table_data)
                 
             else:
                 st.write("Some error occured")

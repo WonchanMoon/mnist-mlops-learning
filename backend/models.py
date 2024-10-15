@@ -16,6 +16,10 @@ class PredictApiData(BaseModel):
     input_image: Any
     model_name: str
 
+class EvaluateApiData(BaseModel):
+    model_config  = ConfigDict(protected_namespaces=())
+    model_name: str
+    # model_version: Optional[Union[list[int], int]]  # list | int in python 10
 
 class DeleteApiData(BaseModel):
     model_config  = ConfigDict(protected_namespaces=())

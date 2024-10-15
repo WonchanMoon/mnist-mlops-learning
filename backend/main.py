@@ -10,7 +10,7 @@ from ml.train import Trainer
 from ml.models import LinearModel, CNNModel
 from ml.data import load_mnist_data
 from ml.utils import set_device
-from backend.models import DeleteApiData, TrainApiData, PredictApiData
+from backend.models import DeleteApiData, TrainApiData, PredictApiData, EvaluateApiData
 
 
 #mlflow.set_tracking_uri('sqlite:///backend.db')
@@ -106,6 +106,31 @@ async def train_api(data: TrainApiData, background_tasks: BackgroundTasks):
 
     return {"result": "Training task started"}
 
+@app.post("/evaluate")
+async def evaluate_api(data: EvaluateApiData):
+    """Predicts on the provided image"""
+    model_name = data.model_name
+    # Fetch the last model in production
+    model = mlflow.pyfunc.load_model(
+        model_uri=f"models:/{model_name}/Production"
+    )
+    # 모델의 최신 Production 버전 정보 가져오기
+    latest_versions = mlflowclient.get_latest_versions(name=model_name, stages=["Production"])
+    latest_version = latest_versions[0]  # 가장 최신 버전 정보 가져오기
+
+    # 모델의 run ID 추출
+    run_id = latest_version.run_id
+
+    # run ID로부터 metrics 조회
+    run_data = mlflowclient.get_run(run_id).data
+    metrics = run_data.metrics
+
+    # 기록된 평가지표 출력
+    print("Model metrics recorded during training:")
+    for metric_name, metric_value in metrics.items():
+        print(f"{metric_name}: {metric_value}")
+
+    return {"result": metrics}
 
 @app.post("/predict")
 async def predict_api(data: PredictApiData):
@@ -123,7 +148,7 @@ async def predict_api(data: PredictApiData):
     pred = model.predict(img)
     print(pred)
     res = int(np.argmax(pred[0]))
-    return {"result": res}
+    return {"result": res, "prob": list(pred.tolist())}
 
 
 @app.post("/delete")
